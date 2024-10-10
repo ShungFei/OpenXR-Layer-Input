@@ -1,7 +1,10 @@
 # The list of OpenXR functions our layer will override.
 override_functions = [
     "xrGetSystem",
-    "xrCreateSession"
+    "xrCreateSession",
+    "xrLocateViews",
+    "xrGetActionStatePose",
+    "xrGetActionStateVector2f"
 ]
 
 # The list of OpenXR functions our layer will use from the runtime.

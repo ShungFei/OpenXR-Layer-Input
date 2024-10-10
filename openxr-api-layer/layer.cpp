@@ -167,6 +167,63 @@ namespace openxr_api_layer {
             return result;
         }
 
+        XrResult xrGetActionStateVector2f(XrSession session,
+                                       const XrActionStateGetInfo* getInfo,
+                                       XrActionStateVector2f* state) override {
+            if (getInfo->type != XR_TYPE_ACTION_STATE_GET_INFO || state->type != XR_TYPE_ACTION_STATE_VECTOR2F) {
+                return XR_ERROR_VALIDATION_FAILURE;
+            }
+
+            if (m_handTracker && getInfo->type == XR_TYPE_ACTION_STATE_GET_INFO &&
+                state->type == XR_TYPE_ACTION_STATE_FLOAT) {
+                if (m_handTracker->getActionState(*getInfo, *state)) {
+
+                    TraceLoggingWrite(g_traceProvider,
+                                      "xrGetActionStateVector2f",
+                                      TLArg(!!state->isActive, "Active"),
+                                      TLArg(state->currentState, "CurrentState"),
+                                      TLArg(!!state->changedSinceLastSync, "ChangedSinceLastSync"),
+                                      TLArg(state->lastChangeTime, "LastChangeTime"));
+
+                    return XR_SUCCESS;
+                }
+            }
+
+            return OpenXrApi::xrGetActionStateVector2f(session, getInfo, state);
+        }
+
+        XrResult xrGetActionStatePose(XrSession session,
+                                      const XrActionStateGetInfo* getInfo,
+                                      XrActionStatePose* state) override {
+            if (getInfo->type != XR_TYPE_ACTION_STATE_GET_INFO || state->type != XR_TYPE_ACTION_STATE_POSE) {
+                return XR_ERROR_VALIDATION_FAILURE;
+            }
+
+            if (m_handTracker && getInfo->type == XR_TYPE_ACTION_STATE_GET_INFO &&
+                state->type == XR_TYPE_ACTION_STATE_POSE) {
+                const std::string fullPath = m_handTracker->getFullPath(getInfo->action, getInfo->subactionPath);
+                bool supportedPath = false;
+                input::Hand hand = input::Hand::Left;
+                if (fullPath == "/user/hand/left/input/grip/pose" || fullPath == "/user/hand/left/input/aim/pose") {
+                    supportedPath = true;
+                    hand = input::Hand::Left;
+                } else if (fullPath == "/user/hand/right/input/grip/pose" ||
+                           fullPath == "/user/hand/right/input/aim/pose") {
+                    supportedPath = true;
+                    hand = input::Hand::Right;
+                }
+                if (supportedPath && m_handTracker->isHandEnabled(hand)) {
+                    state->isActive = m_handTracker->isTrackedRecently(hand);
+
+                    TraceLoggingWrite(g_traceProvider, "xrGetActionStatePose", TLArg(!!state->isActive, "Active"));
+
+                    return XR_SUCCESS;
+                }
+            }
+
+            return OpenXrApi::xrGetActionStatePose(session, getInfo, state);
+        }
+
       private:
         bool isSystemHandled(XrSystemId systemId) const {
             return systemId == m_systemId;
