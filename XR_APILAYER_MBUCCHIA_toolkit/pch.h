@@ -36,6 +36,7 @@
 #include <iomanip>
 #include <iostream>
 #include <filesystem>
+#include <future>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -146,9 +147,6 @@ constexpr inline T roundDown(T value, uint32_t pad) noexcept {
 
 // NVAPI SDK.
 #include <nvapi.h>
-
-// Omnicept SDK.
-#include <omnicept/Glia.h>
 
 // Pimax eye tracker SDK.
 #include <aSeeVRClient.h>

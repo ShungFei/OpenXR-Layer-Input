@@ -436,22 +436,22 @@ namespace {
             }
 
             // Delete outdated entries from the cache.
-            {
-                std::unique_lock lock(m_cacheLock);
-                for (auto& spaceCache : m_cachedHandJointsPoses) {
-                    auto& cache = spaceCache.second;
-                    for (uint32_t side = 0; side < HandCount; side++) {
-                        while (cache[side].size() > 0 && cache[side].front().first + GracePeriod < now) {
-                            cache[side].pop_front();
-                        }
+            // {
+            //     std::unique_lock lock(m_cacheLock);
+            //     for (auto& spaceCache : m_cachedHandJointsPoses) {
+            //         auto& cache = spaceCache.second;
+            //         for (uint32_t side = 0; side < HandCount; side++) {
+            //             while (cache[side].size() > 0 && cache[side].front().first + GracePeriod < now) {
+            //                 cache[side].pop_front();
+            //             }
 
-                        // Update statistics.
-                        if (spaceCache.first == m_preferredBaseSpace.value_or(m_referenceSpace)) {
-                            m_gesturesState.cacheSize[side] = cache[side].size();
-                        }
-                    }
-                }
-            }
+            //             // Update statistics.
+            //             if (spaceCache.first == m_preferredBaseSpace.value_or(m_referenceSpace)) {
+            //                 m_gesturesState.cacheSize[side] = cache[side].size();
+            //             }
+            //         }
+            //     }
+            // }
 
             // Inhibit one and or the other if request. The config file acts as a global override.
             const auto handTrackingEnabled =
@@ -775,56 +775,60 @@ namespace {
 
         const XrHandJointLocationEXT*
         getCachedHandJointsPoses(Hand hand, XrTime time, XrTime now, std::optional<XrSpace> baseSpace) const {
-            const uint32_t side = hand == Hand::Left ? 0 : 1;
+            // Return dummy value
+            XrHandJointLocationEXT dummy = {};
+            return &dummy;
 
-            std::unique_lock lock(m_cacheLock);
+            // const uint32_t side = hand == Hand::Left ? 0 : 1;
 
-            auto& cache = m_cachedHandJointsPoses[baseSpace.value_or(m_referenceSpace)][side];
+            // std::unique_lock lock(m_cacheLock);
 
-            // Search for a entry in the cache.
-            int32_t closestIndex = -1;
-            auto insertIt = cache.begin();
-            XrTime closestTimeDelta = INT64_MAX;
-            for (uint32_t i = 0; i < cache.size(); i++) {
-                const auto t = cache[i].first;
-                const XrTime delta = std::abs(t - time);
-                if (t < time) {
-                    insertIt++;
-                }
+            // auto& cache = m_cachedHandJointsPoses[baseSpace.value_or(m_referenceSpace)][side];
 
-                if (delta < closestTimeDelta) {
-                    closestTimeDelta = delta;
-                    closestIndex = i;
-                } else {
-                    break;
-                }
-            }
+            // // Search for a entry in the cache.
+            // int32_t closestIndex = -1;
+            // auto insertIt = cache.begin();
+            // XrTime closestTimeDelta = INT64_MAX;
+            // for (uint32_t i = 0; i < cache.size(); i++) {
+            //     const auto t = cache[i].first;
+            //     const XrTime delta = std::abs(t - time);
+            //     if (t < time) {
+            //         insertIt++;
+            //     }
 
-            if (closestIndex != -1 && closestTimeDelta < GracePeriod) {
-                return cache[closestIndex].second;
-            }
+            //     if (delta < closestTimeDelta) {
+            //         closestTimeDelta = delta;
+            //         closestIndex = i;
+            //     } else {
+            //         break;
+            //     }
+            // }
 
-            // Create a new entry.
-            {
-                XrHandJointsLocateInfoEXT locateInfo{XR_TYPE_HAND_JOINTS_LOCATE_INFO_EXT};
-                locateInfo.baseSpace = baseSpace.value_or(m_referenceSpace);
-                // Workaround to loss of virtual controller: do not query a time in the past!
-                locateInfo.time = std::max(time, now);
+            // if (closestIndex != -1 && closestTimeDelta < GracePeriod) {
+            //     return cache[closestIndex].second;
+            // }
 
-                CacheEntry entry;
-                XrHandJointLocationsEXT locations{XR_TYPE_HAND_JOINT_LOCATIONS_EXT, nullptr};
-                locations.jointCount = XR_HAND_JOINT_COUNT_EXT;
-                locations.jointLocations = entry.second;
-                entry.first = time;
+            // // Create a new entry.
+            // {
+            //     XrHandJointsLocateInfoEXT locateInfo{XR_TYPE_HAND_JOINTS_LOCATE_INFO_EXT};
+            //     locateInfo.baseSpace = baseSpace.value_or(m_referenceSpace);
+            //     // Workaround to loss of virtual controller: do not query a time in the past!
+            //     locateInfo.time = std::max(time, now);
 
-                CHECK_HRCMD(m_openXR.xrLocateHandJointsEXT(m_handTracker[side], &locateInfo, &locations));
-                if (Pose::IsPoseTracked(locations.jointLocations[XR_HAND_JOINT_PALM_EXT].locationFlags)) {
-                    m_lastTimestampWithPoseTracked[side] = std::max(time, m_lastTimestampWithPoseTracked[side]);
-                } else {
-                    m_gesturesState.numTrackingLosses[side]++;
-                }
-                return cache.emplace(insertIt, entry)->second;
-            }
+            //     CacheEntry entry;
+            //     XrHandJointLocationsEXT locations{XR_TYPE_HAND_JOINT_LOCATIONS_EXT, nullptr};
+            //     locations.jointCount = XR_HAND_JOINT_COUNT_EXT;
+            //     locations.jointLocations = entry.second;
+            //     entry.first = time;
+
+            //     CHECK_HRCMD(m_openXR.xrLocateHandJointsEXT(m_handTracker[side], &locateInfo, &locations));
+            //     if (Pose::IsPoseTracked(locations.jointLocations[XR_HAND_JOINT_PALM_EXT].locationFlags)) {
+            //         m_lastTimestampWithPoseTracked[side] = std::max(time, m_lastTimestampWithPoseTracked[side]);
+            //     } else {
+            //         m_gesturesState.numTrackingLosses[side]++;
+            //     }
+            //     return cache.emplace(insertIt, entry)->second;
+            // }
         }
 
         void performGesturesDetection(const XrHandJointLocationEXT* leftHandJointsPoses,
@@ -1046,7 +1050,7 @@ namespace {
         XrTime m_lastKeepalive{0};
 
         using CacheEntry = std::pair<XrTime, XrHandJointLocationEXT[XR_HAND_JOINT_COUNT_EXT]>;
-        mutable std::map<XrSpace, std::deque<CacheEntry>[HandCount]> m_cachedHandJointsPoses;
+        // mutable std::map<XrSpace, std::deque<CacheEntry>[HandCount]> m_cachedHandJointsPoses;
         mutable std::mutex m_cacheLock;
         mutable std::optional<XrSpace> m_preferredBaseSpace;
         mutable XrTime m_lastTimestampWithPoseTracked[HandCount]{0, 0};

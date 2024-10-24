@@ -813,6 +813,39 @@ namespace toolkit {
             virtual const GesturesState& getGesturesState() const = 0;
         };
 
+        
+        struct IInputController {
+            virtual ~IInputController() = default;
+
+            // virtual XrPath getInteractionProfile() const = 0;
+
+            // virtual void registerAction(XrAction action, XrActionSet actionSet) = 0;
+            // virtual void unregisterAction(XrAction action) = 0;
+            // virtual void registerActionSpace(XrSpace space,
+            //                                     const std::string& path,
+            //                                     const XrPosef& poseInActionSpace) = 0;
+            // virtual void unregisterActionSpace(XrSpace space) = 0;
+
+            // virtual void registerBindings(const XrInteractionProfileSuggestedBinding& bindings) = 0;
+
+            // virtual const std::string getFullPath(XrAction action, XrPath subactionPath) = 0;
+
+            // virtual void beginSession(XrSession session, std::shared_ptr<toolkit::graphics::IDevice> graphicsDevice) = 0;
+            // virtual void endSession() = 0;
+
+            // virtual void sync(XrTime frameTime, XrTime now, const XrActionsSyncInfo& syncInfo) = 0;
+            // virtual bool locate(XrSpace space, XrSpace baseSpace, XrTime time, XrTime now, XrSpaceLocation& location) const = 0;
+
+            virtual int getActionFromAgent(std::shared_ptr<graphics::ITexture> texture) = 0;
+            virtual XrQuaternionf getHeadOrientation() const = 0;
+            virtual bool getThumbstickActionState(const Hand hand, XrActionStateFloat& state) const = 0;
+            virtual bool isEnabled() const = 0;
+            virtual bool hasAction() const = 0;
+            // virtual bool isTrackedRecently(Hand hand) const = 0;
+
+            // virtual void handleOutput(Hand hand, float frequency, XrDuration duration) = 0;
+        };
+
         struct EyeGazeState {
             XrVector3f gazeRay{};
             XrVector2f leftPoint{};

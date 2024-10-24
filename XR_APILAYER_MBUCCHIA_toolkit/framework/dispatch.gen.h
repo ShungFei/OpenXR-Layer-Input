@@ -367,6 +367,14 @@ namespace LAYER_NAMESPACE
 		PFN_xrGetActionStateFloat m_xrGetActionStateFloat{ nullptr };
 
 	public:
+		virtual XrResult xrGetActionStateVector2f(XrSession session, const XrActionStateGetInfo* getInfo, XrActionStateVector2f* state)
+		{
+			return m_xrGetActionStateVector2f(session, getInfo, state);
+		}
+	private:
+		PFN_xrGetActionStateVector2f m_xrGetActionStateVector2f{ nullptr };
+
+	public:
 		virtual XrResult xrGetActionStatePose(XrSession session, const XrActionStateGetInfo* getInfo, XrActionStatePose* state)
 		{
 			return m_xrGetActionStatePose(session, getInfo, state);

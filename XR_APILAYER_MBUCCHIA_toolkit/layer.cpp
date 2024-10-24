@@ -315,39 +315,7 @@ namespace {
                 m_sendInterationProfileEvent = true;
             }
 
-            // For eye tracking, we try to use the Omnicept runtime if it's available.
-            std::unique_ptr<HP::Omnicept::Client> omniceptClient;
-            if (utilities::IsServiceRunning("HP Omnicept")) {
-                try {
-                    HP::Omnicept::Client::StateCallback_T stateCallback = [&](const HP::Omnicept::Client::State state) {
-                        if (state == HP::Omnicept::Client::State::RUNNING ||
-                            state == HP::Omnicept::Client::State::PAUSED) {
-                            Log("Omnicept client connected\n");
-                        } else if (state == HP::Omnicept::Client::State::DISCONNECTED) {
-                            Log("Omnicept client disconnected\n");
-                        }
-                    };
-
-                    std::unique_ptr<HP::Omnicept::Glia::AsyncClientBuilder> omniceptClientBuilder =
-                        HP::Omnicept::Glia::StartBuildClient_Async(
-                            "OpenXR-Toolkit",
-                            std::move(std::make_unique<HP::Omnicept::Abi::SessionLicense>(
-                                "", "", HP::Omnicept::Abi::LicensingModel::CORE, false)),
-                            stateCallback);
-
-                    omniceptClient = std::move(omniceptClientBuilder->getBuildClientResultOrThrow());
-                    Log("Detected HP Omnicept support\n");
-                    m_isOmniceptDetected = true;
-                } catch (const HP::Omnicept::Abi::HandshakeError& e) {
-                    Log("Could not connect to Omnicept runtime HandshakeError: %s\n", e.what());
-                } catch (const HP::Omnicept::Abi::TransportError& e) {
-                    Log("Could not connect to Omnicept runtime TransportError: %s\n", e.what());
-                } catch (const HP::Omnicept::Abi::ProtocolError& e) {
-                    Log("Could not connect to Omnicept runtime ProtocolError: %s\n", e.what());
-                } catch (std::exception& e) {
-                    Log("Could not connect to Omnicept runtime: %s\n", e.what());
-                }
-            }
+            m_inputController = input::CreateInputController(*this, m_configManager);
 
             // ...and the Pimax eye tracker if available.
             {
@@ -375,9 +343,7 @@ namespace {
 
             // TODO: If Foveated Rendering is disabled, maybe do not initialize the eye tracker?
             if (m_configManager->getValue(config::SettingEyeTrackingEnabled)) {
-                if (omniceptClient) {
-                    m_eyeTracker = input::CreateOmniceptEyeTracker(*this, m_configManager, std::move(omniceptClient));
-                } else if (m_hasPimaxEyeTracker) {
+                if (m_hasPimaxEyeTracker) {
                     m_eyeTracker = input::CreatePimaxEyeTracker(*this, m_configManager);
                 } else if (hasEyeTrackerFB) {
                     m_eyeTracker = input::CreateEyeTrackerFB(*this, m_configManager);
@@ -504,11 +470,10 @@ namespace {
 
                 m_supportHandTracking = handTrackingSystemProperties.supportsHandTracking;
                 m_supportEyeTracking = eyeTrackingSystemProperties.supportsEyeGazeInteraction ||
-                                       eyeTrackingFBSystemProperties.supportsEyeTracking || m_isOmniceptDetected ||
-                                       m_hasPimaxEyeTracker ||
+                                       eyeTrackingFBSystemProperties.supportsEyeTracking || m_hasPimaxEyeTracker ||
                                        m_configManager->getValue(config::SettingEyeDebugWithController);
                 const bool isEyeTrackingThruRuntime =
-                    m_supportEyeTracking && !(m_isOmniceptDetected || m_hasPimaxEyeTracker);
+                    m_supportEyeTracking && !(m_hasPimaxEyeTracker);
 
                 // Workaround: the WMR runtime supports mapping the VR controllers through XR_EXT_hand_tracking, which
                 // will (falsely) advertise hand tracking support. Check for the Ultraleap layer in this case.
@@ -1335,6 +1300,19 @@ namespace {
                     m_handTracker->registerAction(*action, actionSet);
                 }
                 TraceLoggingWrite(g_traceProvider, "xrCreateAction", TLPArg(*action, "Action"));
+                DebugLog("xrCreateAction: %s %s %s", fmt::format("0x{:08x}", (uintptr_t)(*action)).c_str(), createInfo->actionName, createInfo->localizedActionName);
+                for (uint32_t i = 0; i < createInfo->countSubactionPaths; i++) {
+                    DebugLog("subActionPath: %s", getPath(createInfo->subactionPaths[i]).c_str());
+                }
+                DebugLog("\n");
+
+                if (std::string(createInfo->actionName) == "hand_thumbstick_x") {
+                    DebugLog("Add hand_thumbstick_x to m_actionMap\n");
+                    m_actionMap[*action] = "hand_thumbstick_x";
+                } else if (std::string(createInfo->actionName) == "hand_thumbstick_y") {
+                    DebugLog("Add hand_thumbstick_y to m_actionMap\n");
+                    m_actionMap[*action] = "hand_thumbstick_y";
+                }
             }
 
             return result;
@@ -1704,6 +1682,12 @@ namespace {
 
             const XrResult result =
                 OpenXrApi::xrLocateViews(session, viewLocateInfo, viewState, viewCapacityInput, viewCountOutput, views);
+
+            // DebugLog("xrLocateViews result=%d, viewCountOutput=%d\n", result, *viewCountOutput);
+
+            viewState->viewStateFlags |=
+                    XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
+
             if (XR_SUCCEEDED(result) && isVrSession(session) &&
                 viewLocateInfo->viewConfigurationType == XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO &&
                 viewCapacityInput) {
@@ -1714,7 +1698,7 @@ namespace {
                 m_posesForFrame[1].pose = views[1].pose;
 
                 // Fix Fallout 4 / OpenComposite Decal Issue for WMR
-                if (m_overrideParallelProjection) {
+                if (true) {
                     views[0].pose.orientation.w = views[1].pose.orientation.w;
                     views[0].pose.orientation.x = views[1].pose.orientation.x;
                     views[0].pose.orientation.y = views[1].pose.orientation.y;
@@ -1822,6 +1806,23 @@ namespace {
                     StoreXrFov(&views[1].fov, LoadXrFov(views[1].fov) * XMVectorReplicate(1.f / (zoom * 0.1f)));
                 }
 
+                if (m_inputController && m_inputController->hasAction()) {
+                    XrQuaternionf headOrientation = m_inputController->getHeadOrientation();;
+
+                    DebugLog("Setting head orientation from %.5f %.5f %.5f %.5f to %.5f %.5f %.5f %.5f\n", views[0].pose.orientation.w, views[0].pose.orientation.x, views[0].pose.orientation.y, views[0].pose.orientation.z, headOrientation.w, headOrientation.x, headOrientation.y, headOrientation.z);
+
+                    // TODO: Both eyes are currently projected in parallel
+                    views[0].pose.orientation.w = headOrientation.w;
+                    views[0].pose.orientation.x = headOrientation.x;
+                    views[0].pose.orientation.y = headOrientation.y;
+                    views[0].pose.orientation.z = headOrientation.z;
+
+                    views[1].pose.orientation.w = headOrientation.w;
+                    views[1].pose.orientation.x = headOrientation.x;
+                    views[1].pose.orientation.y = headOrientation.y;
+                    views[1].pose.orientation.z = headOrientation.z;
+                }
+
                 TraceLoggingWrite(g_traceProvider,
                                   "xrLocateViews",
                                   TLArg(*viewCountOutput, "ViewCountOutput"),
@@ -1845,6 +1846,9 @@ namespace {
                               TLPArg(space, "Space"),
                               TLPArg(baseSpace, "BaseSpace"),
                               TLArg(time, "Time"));
+
+            location->locationFlags |=
+                    XR_SPACE_LOCATION_POSITION_TRACKED_BIT | XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
 
             if (m_handTracker && m_vrSession != XR_NULL_HANDLE && location->type == XR_TYPE_SPACE_LOCATION) {
                 m_performanceCounters.handTrackingTimer->start();
@@ -1951,31 +1955,64 @@ namespace {
                 return XR_ERROR_VALIDATION_FAILURE;
             }
 
+            const XrResult result = OpenXrApi::xrGetActionStateFloat(session, getInfo, state);
+
             TraceLoggingWrite(g_traceProvider,
                               "xrGetActionStateFloat",
                               TLPArg(session, "Session"),
                               TLPArg(getInfo->action, "Action"),
+                              TLArg(state->currentState, "State"),
                               TLArg(getPath(getInfo->subactionPath).c_str(), "SubactionPath"));
 
-            if (m_handTracker && isVrSession(session) && getInfo->type == XR_TYPE_ACTION_STATE_GET_INFO &&
-                state->type == XR_TYPE_ACTION_STATE_FLOAT) {
+            const auto it = m_actionMap.find(getInfo->action);
+
+            // if (it != m_actionMap.end() && (it->second == "hand_thumbstick_x" || it->second == "hand_thumbstick_y")) {
+            //     DebugLog("xrGetActionStateFloat: %s %s %.5f\n", getPath(getInfo->subactionPath).c_str(), fmt::format("0x{:08x}", (uintptr_t)(getInfo->action)).c_str(), state->currentState);
+            // }
+            
+            if (m_inputController && m_inputController->hasAction() && isVrSession(session) && getInfo->type == XR_TYPE_ACTION_STATE_GET_INFO && state->type == XR_TYPE_ACTION_STATE_FLOAT && it != m_actionMap.end() && (it->second == "hand_thumbstick_x" || it->second == "hand_thumbstick_y")) {
                 m_performanceCounters.handTrackingTimer->start();
-                if (m_handTracker->getActionState(*getInfo, *state)) {
-                    m_performanceCounters.handTrackingTimer->stop();
-                    m_stats.handTrackingCpuTimeUs += m_performanceCounters.handTrackingTimer->query();
 
-                    TraceLoggingWrite(g_traceProvider,
-                                      "xrGetActionStateFloat",
-                                      TLArg(!!state->isActive, "Active"),
-                                      TLArg(state->currentState, "CurrentState"),
-                                      TLArg(!!state->changedSinceLastSync, "ChangedSinceLastSync"),
-                                      TLArg(state->lastChangeTime, "LastChangeTime"));
-
-                    return XR_SUCCESS;
+                if (getPath(getInfo->subactionPath) == "/user/hand/left") {
+                    m_inputController->getThumbstickActionState(toolkit::input::Hand::Left, *state);
+                } else if (getPath(getInfo->subactionPath) == "/user/hand/right") {
+                    m_inputController->getThumbstickActionState(toolkit::input::Hand::Right, *state);
                 }
+                
+                m_performanceCounters.handTrackingTimer->stop();
+                m_stats.handTrackingCpuTimeUs += m_performanceCounters.handTrackingTimer->query();
+
+                DebugLog("Changed thumbstick: %s %s %.5f\n", getPath(getInfo->subactionPath).c_str(), fmt::format("0x{:08x}", (uintptr_t)(getInfo->action)).c_str(), state->currentState);
+
+                TraceLoggingWrite(g_traceProvider,
+                                    "xrGetActionStateFloat",
+                                    TLArg(!!state->isActive, "Active"),
+                                    TLArg(state->currentState, "CurrentState"),
+                                    TLArg(!!state->changedSinceLastSync, "ChangedSinceLastSync"),
+                                    TLArg(state->lastChangeTime, "LastChangeTime"));
+
+                return XR_SUCCESS;
             }
 
-            return OpenXrApi::xrGetActionStateFloat(session, getInfo, state);
+            // if (m_handTracker && isVrSession(session) && getInfo->type == XR_TYPE_ACTION_STATE_GET_INFO &&
+            //     state->type == XR_TYPE_ACTION_STATE_FLOAT) {
+            //     m_performanceCounters.handTrackingTimer->start();
+            //     if (m_handTracker->getActionState(*getInfo, *state)) {
+            //         m_performanceCounters.handTrackingTimer->stop();
+            //         m_stats.handTrackingCpuTimeUs += m_performanceCounters.handTrackingTimer->query();
+
+            //         TraceLoggingWrite(g_traceProvider,
+            //                           "xrGetActionStateFloat",
+            //                           TLArg(!!state->isActive, "Active"),
+            //                           TLArg(state->currentState, "CurrentState"),
+            //                           TLArg(!!state->changedSinceLastSync, "ChangedSinceLastSync"),
+            //                           TLArg(state->lastChangeTime, "LastChangeTime"));
+
+            //         return XR_SUCCESS;
+            //     }
+            // }
+
+            return result;
         }
 
         XrResult xrGetActionStatePose(XrSession session,
@@ -2134,7 +2171,7 @@ namespace {
 
                 // In Turbo mode, we accept pipelining of exactly one frame.
                 if (m_asyncWaitPolled) {
-                    TraceLocalActivity(local);
+                    TraceLocalActivity(local)
 
                     // On second frame poll, we must wait.
                     TraceLoggingWriteStart(local, "AsyncWaitNow");
@@ -3182,6 +3219,14 @@ namespace {
                 m_performanceCounters.overlayGpuTimer[m_performanceCounters.gpuTimerIndex]->stop();
             }
 
+            int AGENT_ACTION_PERIOD_MS = 2000;
+            auto currentTime = std::chrono::system_clock::now();
+
+            if (currentTime - m_timeLastAgentAction > std::chrono::milliseconds(AGENT_ACTION_PERIOD_MS) && textureForOverlay[0] && m_inputController->isEnabled()) {
+                m_inputController->getActionFromAgent(textureForOverlay[0]);
+                m_timeLastAgentAction = currentTime;
+            }
+
             // Whether the menu is available or not, we can still use that top-most texture for screenshot.
             // TODO: The screenshot does not work with multi-layer applications.
             const bool requestScreenshot =
@@ -3401,7 +3446,6 @@ namespace {
         bool m_supportHandTracking{false};
         bool m_supportEyeTracking{false};
         bool m_supportMotionReprojectionLock{false};
-        bool m_isOmniceptDetected{false};
         bool m_hasPimaxEyeTracker{false};
         bool m_isFrameThrottlingPossible{true};
         bool m_overrideParallelProjection{false};
@@ -3420,6 +3464,7 @@ namespace {
         XrVector2f m_eyeGaze[utilities::ViewCount];
         XrView m_posesForFrame[utilities::ViewCount];
         std::chrono::time_point<std::chrono::steady_clock> m_lastFrameWaitTimestamp{};
+        std::chrono::system_clock::time_point m_timeLastAgentAction{std::chrono::system_clock::now()};
         uint32_t m_frameThrottleSleepOffset{0};
 
         std::mutex m_asyncWaitLock;
@@ -3445,6 +3490,8 @@ namespace {
         bool m_isActionSetAttached{false};
         bool m_needVarjoPollEventWorkaround{false};
         std::shared_ptr<input::IHandTracker> m_handTracker;
+        std::shared_ptr<input::IInputController> m_inputController;
+        std::map<XrAction, std::string> m_actionMap;
 
         std::shared_ptr<graphics::IImageProcessor> m_upscaler;
         std::shared_ptr<graphics::IImageProcessor> m_postProcessor;
