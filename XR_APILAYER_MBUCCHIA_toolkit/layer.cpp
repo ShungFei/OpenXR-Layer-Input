@@ -315,6 +315,7 @@ namespace {
                 m_sendInterationProfileEvent = true;
             }
 
+            m_inputController = input::CreateInputController(*this, m_configManager);
 
             // ...and the Pimax eye tracker if available.
             {
@@ -1299,6 +1300,19 @@ namespace {
                     m_handTracker->registerAction(*action, actionSet);
                 }
                 TraceLoggingWrite(g_traceProvider, "xrCreateAction", TLPArg(*action, "Action"));
+                DebugLog("xrCreateAction: %s %s %s", fmt::format("0x{:08x}", (uintptr_t)(*action)).c_str(), createInfo->actionName, createInfo->localizedActionName);
+                for (uint32_t i = 0; i < createInfo->countSubactionPaths; i++) {
+                    DebugLog("subActionPath: %s", getPath(createInfo->subactionPaths[i]).c_str());
+                }
+                DebugLog("\n");
+
+                if (std::string(createInfo->actionName) == "hand_thumbstick_x") {
+                    DebugLog("Add hand_thumbstick_x to m_actionMap\n");
+                    m_actionMap[*action] = "hand_thumbstick_x";
+                } else if (std::string(createInfo->actionName) == "hand_thumbstick_y") {
+                    DebugLog("Add hand_thumbstick_y to m_actionMap\n");
+                    m_actionMap[*action] = "hand_thumbstick_y";
+                }
             }
 
             return result;
@@ -1668,6 +1682,12 @@ namespace {
 
             const XrResult result =
                 OpenXrApi::xrLocateViews(session, viewLocateInfo, viewState, viewCapacityInput, viewCountOutput, views);
+
+            DebugLog("xrLocateViews result=%d, viewCountOutput=%d\n", result, *viewCountOutput);
+
+            viewState->viewStateFlags |=
+                    XR_VIEW_STATE_POSITION_TRACKED_BIT | XR_VIEW_STATE_ORIENTATION_TRACKED_BIT;
+
             if (XR_SUCCEEDED(result) && isVrSession(session) &&
                 viewLocateInfo->viewConfigurationType == XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO &&
                 viewCapacityInput) {
@@ -1786,6 +1806,23 @@ namespace {
                     StoreXrFov(&views[1].fov, LoadXrFov(views[1].fov) * XMVectorReplicate(1.f / (zoom * 0.1f)));
                 }
 
+                if (m_inputController && m_inputController->hasAction()) {
+                    XrQuaternionf headOrientation = m_inputController->getHeadOrientation();;
+
+                    DebugLog("Setting head orientation from %.5f %.5f %.5f %.5f to %.5f %.5f %.5f %.5f\n", views[0].pose.orientation.w, views[0].pose.orientation.x, views[0].pose.orientation.y, views[0].pose.orientation.z, headOrientation.w, headOrientation.x, headOrientation.y, headOrientation.z);
+
+                    // TODO: Both eyes are currently projected in parallel
+                    views[0].pose.orientation.w = headOrientation.w;
+                    views[0].pose.orientation.x = headOrientation.x;
+                    views[0].pose.orientation.y = headOrientation.y;
+                    views[0].pose.orientation.z = headOrientation.z;
+
+                    views[1].pose.orientation.w = headOrientation.w;
+                    views[1].pose.orientation.x = headOrientation.x;
+                    views[1].pose.orientation.y = headOrientation.y;
+                    views[1].pose.orientation.z = headOrientation.z;
+                }
+
                 TraceLoggingWrite(g_traceProvider,
                                   "xrLocateViews",
                                   TLArg(*viewCountOutput, "ViewCountOutput"),
@@ -1809,6 +1846,9 @@ namespace {
                               TLPArg(space, "Space"),
                               TLPArg(baseSpace, "BaseSpace"),
                               TLArg(time, "Time"));
+
+            location->locationFlags |=
+                    XR_SPACE_LOCATION_POSITION_TRACKED_BIT | XR_SPACE_LOCATION_ORIENTATION_TRACKED_BIT;
 
             if (m_handTracker && m_vrSession != XR_NULL_HANDLE && location->type == XR_TYPE_SPACE_LOCATION) {
                 m_performanceCounters.handTrackingTimer->start();
@@ -1915,31 +1955,46 @@ namespace {
                 return XR_ERROR_VALIDATION_FAILURE;
             }
 
+            const XrResult result = OpenXrApi::xrGetActionStateFloat(session, getInfo, state);
+
             TraceLoggingWrite(g_traceProvider,
                               "xrGetActionStateFloat",
                               TLPArg(session, "Session"),
                               TLPArg(getInfo->action, "Action"),
+                              TLArg(state->currentState, "State"),
                               TLArg(getPath(getInfo->subactionPath).c_str(), "SubactionPath"));
 
-            if (m_handTracker && isVrSession(session) && getInfo->type == XR_TYPE_ACTION_STATE_GET_INFO &&
-                state->type == XR_TYPE_ACTION_STATE_FLOAT) {
+            const auto it = m_actionMap.find(getInfo->action);
+
+            if (it != m_actionMap.end() && (it->second == "hand_thumbstick_x" || it->second == "hand_thumbstick_y")) {
+                DebugLog("xrGetActionStateFloat: %s %s %.5f\n", getPath(getInfo->subactionPath).c_str(), fmt::format("0x{:08x}", (uintptr_t)(getInfo->action)).c_str(), state->currentState);
+            }
+            
+            if (m_inputController && m_inputController->hasAction() && isVrSession(session) && getInfo->type == XR_TYPE_ACTION_STATE_GET_INFO && state->type == XR_TYPE_ACTION_STATE_FLOAT && it != m_actionMap.end() && (it->second == "hand_thumbstick_x" || it->second == "hand_thumbstick_y")) {
                 m_performanceCounters.handTrackingTimer->start();
-                if (m_handTracker->getActionState(*getInfo, *state)) {
-                    m_performanceCounters.handTrackingTimer->stop();
-                    m_stats.handTrackingCpuTimeUs += m_performanceCounters.handTrackingTimer->query();
 
-                    TraceLoggingWrite(g_traceProvider,
-                                      "xrGetActionStateFloat",
-                                      TLArg(!!state->isActive, "Active"),
-                                      TLArg(state->currentState, "CurrentState"),
-                                      TLArg(!!state->changedSinceLastSync, "ChangedSinceLastSync"),
-                                      TLArg(state->lastChangeTime, "LastChangeTime"));
-
-                    return XR_SUCCESS;
+                if (getPath(getInfo->subactionPath) == "/user/hand/left") {
+                    m_inputController->getThumbstickActionState(toolkit::input::Hand::Left, *state);
+                } else if (getPath(getInfo->subactionPath) == "/user/hand/right") {
+                    m_inputController->getThumbstickActionState(toolkit::input::Hand::Right, *state);
                 }
+                
+                m_performanceCounters.handTrackingTimer->stop();
+                m_stats.handTrackingCpuTimeUs += m_performanceCounters.handTrackingTimer->query();
+
+                DebugLog("Changed thumbstick: %s %s %.5f\n", getPath(getInfo->subactionPath).c_str(), fmt::format("0x{:08x}", (uintptr_t)(getInfo->action)).c_str(), state->currentState);
+
+                TraceLoggingWrite(g_traceProvider,
+                                    "xrGetActionStateFloat",
+                                    TLArg(!!state->isActive, "Active"),
+                                    TLArg(state->currentState, "CurrentState"),
+                                    TLArg(!!state->changedSinceLastSync, "ChangedSinceLastSync"),
+                                    TLArg(state->lastChangeTime, "LastChangeTime"));
+
+                return XR_SUCCESS;
             }
 
-            return OpenXrApi::xrGetActionStateFloat(session, getInfo, state);
+            return result;
         }
 
         XrResult xrGetActionStatePose(XrSession session,
@@ -3146,6 +3201,14 @@ namespace {
                 m_performanceCounters.overlayGpuTimer[m_performanceCounters.gpuTimerIndex]->stop();
             }
 
+            int AGENT_ACTION_PERIOD_MS = 2000;
+            auto currentTime = std::chrono::system_clock::now();
+
+            if (currentTime - m_timeLastAgentAction > std::chrono::milliseconds(AGENT_ACTION_PERIOD_MS) && textureForOverlay[0] && m_inputController->isEnabled()) {
+                m_inputController->getActionFromAgent(textureForOverlay[0]);
+                m_timeLastAgentAction = currentTime;
+            }
+
             // Whether the menu is available or not, we can still use that top-most texture for screenshot.
             // TODO: The screenshot does not work with multi-layer applications.
             const bool requestScreenshot =
@@ -3383,6 +3446,7 @@ namespace {
         XrVector2f m_eyeGaze[utilities::ViewCount];
         XrView m_posesForFrame[utilities::ViewCount];
         std::chrono::time_point<std::chrono::steady_clock> m_lastFrameWaitTimestamp{};
+        std::chrono::system_clock::time_point m_timeLastAgentAction{std::chrono::system_clock::now()};
         uint32_t m_frameThrottleSleepOffset{0};
 
         std::mutex m_asyncWaitLock;
@@ -3408,6 +3472,8 @@ namespace {
         bool m_isActionSetAttached{false};
         bool m_needVarjoPollEventWorkaround{false};
         std::shared_ptr<input::IHandTracker> m_handTracker;
+        std::shared_ptr<input::IInputController> m_inputController;
+        std::map<XrAction, std::string> m_actionMap;
 
         std::shared_ptr<graphics::IImageProcessor> m_upscaler;
         std::shared_ptr<graphics::IImageProcessor> m_postProcessor;

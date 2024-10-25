@@ -166,6 +166,9 @@
     <ClCompile Include="cas.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="statecontroller.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="image_proto.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

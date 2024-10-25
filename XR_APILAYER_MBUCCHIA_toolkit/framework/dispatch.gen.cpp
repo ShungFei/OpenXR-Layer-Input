@@ -633,6 +633,28 @@ namespace LAYER_NAMESPACE
 		return result;
 	}
 
+	XrResult xrGetActionStateVector2f(XrSession session, const XrActionStateGetInfo* getInfo, XrActionStateVector2f* state)
+	{
+		TraceLocalActivity(local);
+		TraceLoggingWriteStart(local, "xrGetActionStateVector2f");
+
+		XrResult result;
+		try
+		{
+			result = LAYER_NAMESPACE::GetInstance()->xrGetActionStateVector2f(session, getInfo, state);
+		}
+		catch (std::exception& exc)
+		{
+			TraceLoggingWriteTagged(local, "xrGetActionStateVector2f_Error", TLArg(exc.what(), "Error"));
+			Log("xrGetActionStateVector2f: %s\n", exc.what());
+			result = XR_ERROR_RUNTIME_FAILURE;
+		}
+
+		TraceLoggingWriteStop(local, "xrGetActionStateVector2f", TLArg(xr::ToCString(result), "Result"));
+
+		return result;
+	}
+
 	XrResult xrGetActionStatePose(XrSession session, const XrActionStateGetInfo* getInfo, XrActionStatePose* state)
 	{
 		TraceLocalActivity(local);
@@ -892,6 +914,11 @@ namespace LAYER_NAMESPACE
 			{
 				m_xrGetActionStateFloat = reinterpret_cast<PFN_xrGetActionStateFloat>(*function);
 				*function = reinterpret_cast<PFN_xrVoidFunction>(LAYER_NAMESPACE::xrGetActionStateFloat);
+			}
+			else if (apiName == "xrGetActionStateVector2f")
+			{
+				m_xrGetActionStateVector2f = reinterpret_cast<PFN_xrGetActionStateVector2f>(*function);
+				*function = reinterpret_cast<PFN_xrVoidFunction>(LAYER_NAMESPACE::xrGetActionStateVector2f);
 			}
 			else if (apiName == "xrGetActionStatePose")
 			{

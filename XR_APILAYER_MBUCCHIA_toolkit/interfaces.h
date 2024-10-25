@@ -813,6 +813,16 @@ namespace toolkit {
             virtual const GesturesState& getGesturesState() const = 0;
         };
 
+        struct IInputController {
+            virtual ~IInputController() = default;
+
+            virtual int getActionFromAgent(std::shared_ptr<graphics::ITexture> texture) = 0;
+            virtual XrQuaternionf getHeadOrientation() const = 0;
+            virtual bool getThumbstickActionState(const Hand hand, XrActionStateFloat& state) const = 0;
+            virtual bool isEnabled() const = 0;
+            virtual bool hasAction() const = 0;
+        };
+
         struct EyeGazeState {
             XrVector3f gazeRay{};
             XrVector2f leftPoint{};

@@ -268,6 +268,7 @@ $(SolutionDir)\patches\sed.exe -i "s/VALUE \"ProductVersion\", \".*\"$/VALUE \"P
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="imageprocess.cpp" />
+    <ClCompile Include="statecontroller.cpp" />
     <ClCompile Include="utilities.cpp" />
     <ClCompile Include="utils\ScreenGrab11.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
