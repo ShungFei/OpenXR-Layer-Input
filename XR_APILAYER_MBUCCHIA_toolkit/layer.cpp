@@ -315,39 +315,6 @@ namespace {
                 m_sendInterationProfileEvent = true;
             }
 
-            // For eye tracking, we try to use the Omnicept runtime if it's available.
-            std::unique_ptr<HP::Omnicept::Client> omniceptClient;
-            if (utilities::IsServiceRunning("HP Omnicept")) {
-                try {
-                    HP::Omnicept::Client::StateCallback_T stateCallback = [&](const HP::Omnicept::Client::State state) {
-                        if (state == HP::Omnicept::Client::State::RUNNING ||
-                            state == HP::Omnicept::Client::State::PAUSED) {
-                            Log("Omnicept client connected\n");
-                        } else if (state == HP::Omnicept::Client::State::DISCONNECTED) {
-                            Log("Omnicept client disconnected\n");
-                        }
-                    };
-
-                    std::unique_ptr<HP::Omnicept::Glia::AsyncClientBuilder> omniceptClientBuilder =
-                        HP::Omnicept::Glia::StartBuildClient_Async(
-                            "OpenXR-Toolkit",
-                            std::move(std::make_unique<HP::Omnicept::Abi::SessionLicense>(
-                                "", "", HP::Omnicept::Abi::LicensingModel::CORE, false)),
-                            stateCallback);
-
-                    omniceptClient = std::move(omniceptClientBuilder->getBuildClientResultOrThrow());
-                    Log("Detected HP Omnicept support\n");
-                    m_isOmniceptDetected = true;
-                } catch (const HP::Omnicept::Abi::HandshakeError& e) {
-                    Log("Could not connect to Omnicept runtime HandshakeError: %s\n", e.what());
-                } catch (const HP::Omnicept::Abi::TransportError& e) {
-                    Log("Could not connect to Omnicept runtime TransportError: %s\n", e.what());
-                } catch (const HP::Omnicept::Abi::ProtocolError& e) {
-                    Log("Could not connect to Omnicept runtime ProtocolError: %s\n", e.what());
-                } catch (std::exception& e) {
-                    Log("Could not connect to Omnicept runtime: %s\n", e.what());
-                }
-            }
 
             // ...and the Pimax eye tracker if available.
             {
@@ -375,9 +342,7 @@ namespace {
 
             // TODO: If Foveated Rendering is disabled, maybe do not initialize the eye tracker?
             if (m_configManager->getValue(config::SettingEyeTrackingEnabled)) {
-                if (omniceptClient) {
-                    m_eyeTracker = input::CreateOmniceptEyeTracker(*this, m_configManager, std::move(omniceptClient));
-                } else if (m_hasPimaxEyeTracker) {
+                if (m_hasPimaxEyeTracker) {
                     m_eyeTracker = input::CreatePimaxEyeTracker(*this, m_configManager);
                 } else if (hasEyeTrackerFB) {
                     m_eyeTracker = input::CreateEyeTrackerFB(*this, m_configManager);
@@ -504,11 +469,10 @@ namespace {
 
                 m_supportHandTracking = handTrackingSystemProperties.supportsHandTracking;
                 m_supportEyeTracking = eyeTrackingSystemProperties.supportsEyeGazeInteraction ||
-                                       eyeTrackingFBSystemProperties.supportsEyeTracking || m_isOmniceptDetected ||
-                                       m_hasPimaxEyeTracker ||
+                                       eyeTrackingFBSystemProperties.supportsEyeTracking || m_hasPimaxEyeTracker ||
                                        m_configManager->getValue(config::SettingEyeDebugWithController);
                 const bool isEyeTrackingThruRuntime =
-                    m_supportEyeTracking && !(m_isOmniceptDetected || m_hasPimaxEyeTracker);
+                    m_supportEyeTracking && !(m_hasPimaxEyeTracker);
 
                 // Workaround: the WMR runtime supports mapping the VR controllers through XR_EXT_hand_tracking, which
                 // will (falsely) advertise hand tracking support. Check for the Ultraleap layer in this case.
@@ -3401,7 +3365,6 @@ namespace {
         bool m_supportHandTracking{false};
         bool m_supportEyeTracking{false};
         bool m_supportMotionReprojectionLock{false};
-        bool m_isOmniceptDetected{false};
         bool m_hasPimaxEyeTracker{false};
         bool m_isFrameThrottlingPossible{true};
         bool m_overrideParallelProjection{false};
