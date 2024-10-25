@@ -233,6 +233,7 @@ $(SolutionDir)\patches\sed.exe -i "s/VALUE \"ProductVersion\", \".*\"$/VALUE \"P
     </ClInclude>
     <ClInclude Include="d3dcommon.h" />
     <ClInclude Include="detours_helpers.h" />
+    <ClInclude Include="image.pb.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="shader_utilities.h" />
     <ClInclude Include="factories.h" />
@@ -257,6 +258,7 @@ $(SolutionDir)\patches\sed.exe -i "s/VALUE \"ProductVersion\", \".*\"$/VALUE \"P
     <ClCompile Include="framework\entry.cpp" />
     <ClCompile Include="fsr.cpp" />
     <ClCompile Include="hand2controller.cpp" />
+    <ClCompile Include="image_proto.cpp" />
     <ClCompile Include="layer.cpp" />
     <ClCompile Include="log.cpp" />
     <ClCompile Include="menu.cpp" />
